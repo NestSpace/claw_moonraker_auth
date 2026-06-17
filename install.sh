@@ -62,11 +62,20 @@ function check_prerequisites() {
     if ! command -v nginx &> /dev/null; then
         missing_deps+=("nginx")
     else
-        if ! nginx -V 2>&1 | grep -q "http_js_module"; then
-            log_error "nginx is installed but does not have njs (http_js_module) support"
-            log_info "Please install nginx with njs module"
-            exit 1
-        fi
+    local has_njs=0
+    # 檢查 1：是否為靜態編譯支援
+    if nginx -V 2>&1 | grep -q "http_js_module"; then
+        has_njs=1
+    # 檢查 2：是否加載了動態模組（Debian/Ubuntu 格式）
+    elif [ -f /usr/lib/nginx/modules/ngx_http_js_module.so ] || [ -f /etc/nginx/modules-enabled/50-mod-http-js.conf ]; then
+        has_njs=1
+    fi
+
+    if [ "$has_njs" -eq 0 ]; then
+        log_error "nginx is installed but does not have njs (http_js_module) support"
+        log_info "Please install nginx with njs module"
+        exit 1
+    fi
     fi
 
     # Check Python 3

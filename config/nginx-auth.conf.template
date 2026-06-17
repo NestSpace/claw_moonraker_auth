@@ -37,15 +37,15 @@ http {
         }
 
         location /auth/register {
-            js_content management.registerKey;
+            js_content management.handleManagement;
         }
 
         location /auth/list {
-            js_content management.listKeys;
+            js_content management.handleManagement;
         }
 
         location /auth/delete {
-            js_content management.deleteKey;
+            js_content management.handleManagement;
         }
 
         location /access/card/register {
@@ -64,7 +64,7 @@ http {
             js_content cards.deleteCard;
         }
 
-        location /@moonraker {
+        location @moonraker {
             internal;
             proxy_pass http://{{MOONRAKER_HOST}}:{{MOONRAKER_PORT}};
             proxy_set_header X-Api-Key $moonraker_service_key;
@@ -91,7 +91,7 @@ http {
         }
 
         location / {
-            js_content auth.handler;
+            js_content auth.authenticateRequest;
         }
     }
 }
