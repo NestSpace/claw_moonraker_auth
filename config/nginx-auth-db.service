@@ -1,0 +1,16 @@
+[Unit]
+Description=Moonraker Auth Database Helper
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+Environment="DB_PATH=/var/lib/nginx-auth/keys.db"
+Environment="PORT=9999"
+ExecStart=/usr/bin/python3 /usr/local/bin/nginx-auth-db-helper
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

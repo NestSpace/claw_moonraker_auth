@@ -1,0 +1,97 @@
+env MOONRAKER_SERVICE_KEY;
+
+load_module /usr/lib/nginx/modules/ngx_http_js_module.so;
+
+worker_processes 1;
+
+error_log {{LOG_DIR}}/error.log;
+pid /run/nginx-auth.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    access_log {{LOG_DIR}}/access.log;
+
+    map $host $moonraker_service_key {
+        default "{{SERVICE_KEY}}";
+    }
+
+    js_path "{{JS_PATH}}/";
+    js_import auth from auth-secure.js;
+    js_import management from management.js;
+    js_import cards from cards.js;
+
+    server {
+        listen {{AUTH_PORT}};
+        server_name localhost;
+
+        location /internal_db {
+            internal;
+            proxy_pass http://127.0.0.1:{{DB_HELPER_PORT}}/;
+            proxy_set_header Content-Type application/json;
+        }
+
+        location /auth/register {
+            js_content management.registerKey;
+        }
+
+        location /auth/list {
+            js_content management.listKeys;
+        }
+
+        location /auth/delete {
+            js_content management.deleteKey;
+        }
+
+        location /access/card/register {
+            js_content cards.registerCard;
+        }
+
+        location /access/card {
+            js_content cards.getCard;
+        }
+
+        location /access/card/list {
+            js_content cards.listCards;
+        }
+
+        location /access/card/delete {
+            js_content cards.deleteCard;
+        }
+
+        location /@moonraker {
+            internal;
+            proxy_pass http://{{MOONRAKER_HOST}}:{{MOONRAKER_PORT}};
+            proxy_set_header X-Api-Key $moonraker_service_key;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection $http_connection;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 90;
+        }
+
+        location /internal_token_execute/ {
+            internal;
+            rewrite ^/internal_token_execute/(.*) /$1 break;
+            proxy_pass http://{{MOONRAKER_HOST}}:{{MOONRAKER_PORT}};
+            proxy_set_header X-Api-Key $moonraker_service_key;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        location / {
+            js_content auth.handler;
+        }
+    }
+}

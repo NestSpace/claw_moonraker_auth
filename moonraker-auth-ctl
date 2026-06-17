@@ -1,0 +1,211 @@
+#!/bin/bash
+# Moonraker Auth Control - Management CLI
+
+set -e
+
+SCRIPT_NAME="moonraker-auth-ctl"
+CONFIG_FILE="/etc/moonraker-auth/moonraker-auth.conf"
+NGINX_SERVICE="nginx-auth.service"
+DB_SERVICE="nginx-auth-db.service"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+function print_usage() {
+    cat << EOF
+Moonraker Auth Control - Management CLI
+
+Usage: $SCRIPT_NAME <command>
+
+Commands:
+  start       Start both nginx and database services
+  stop        Stop both services
+  restart     Restart both services
+  status      Show status of both services
+  logs        Show logs (use 'nginx' or 'db' to show specific service)
+  config      Show current configuration
+  reload      Reload nginx configuration without restart
+  test        Test nginx configuration syntax
+  bootstrap   Create a new bootstrap admin key
+  help        Show this help message
+
+Examples:
+  $SCRIPT_NAME start
+  $SCRIPT_NAME logs nginx
+  $SCRIPT_NAME bootstrap
+EOF
+}
+
+function check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "${RED}Error: This command requires root privileges${NC}"
+        echo "Please run with sudo: sudo $SCRIPT_NAME $1"
+        exit 1
+    fi
+}
+
+function cmd_start() {
+    check_root "start"
+    echo "Starting Moonraker Auth services..."
+    systemctl start "$DB_SERVICE"
+    systemctl start "$NGINX_SERVICE"
+    echo -e "${GREEN}Services started${NC}"
+    cmd_status
+}
+
+function cmd_stop() {
+    check_root "stop"
+    echo "Stopping Moonraker Auth services..."
+    systemctl stop "$NGINX_SERVICE" 2>/dev/null || true
+    systemctl stop "$DB_SERVICE" 2>/dev/null || true
+    echo -e "${GREEN}Services stopped${NC}"
+}
+
+function cmd_restart() {
+    check_root "restart"
+    echo "Restarting Moonraker Auth services..."
+    systemctl restart "$DB_SERVICE"
+    systemctl restart "$NGINX_SERVICE"
+    echo -e "${GREEN}Services restarted${NC}"
+    cmd_status
+}
+
+function cmd_status() {
+    echo "=== Database Helper Status ==="
+    systemctl status "$DB_SERVICE" --no-pager || true
+    echo ""
+    echo "=== nginx Auth Proxy Status ==="
+    systemctl status "$NGINX_SERVICE" --no-pager || true
+}
+
+function cmd_logs() {
+    local service="$1"
+    case "$service" in
+        nginx)
+            echo "=== nginx Auth Proxy Logs ==="
+            journalctl -u "$NGINX_SERVICE" -n 50 --no-pager
+            ;;
+        db)
+            echo "=== Database Helper Logs ==="
+            journalctl -u "$DB_SERVICE" -n 50 --no-pager
+            ;;
+        "")
+            echo "=== Database Helper Logs ==="
+            journalctl -u "$DB_SERVICE" -n 25 --no-pager
+            echo ""
+            echo "=== nginx Auth Proxy Logs ==="
+            journalctl -u "$NGINX_SERVICE" -n 25 --no-pager
+            ;;
+        *)
+            echo -e "${RED}Invalid service: $service${NC}"
+            echo "Use 'nginx' or 'db', or leave empty for both"
+            exit 1
+            ;;
+    esac
+}
+
+function cmd_config() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo -e "${RED}Configuration file not found: $CONFIG_FILE${NC}"
+        exit 1
+    fi
+    echo "=== Current Configuration ==="
+    cat "$CONFIG_FILE"
+}
+
+function cmd_reload() {
+    check_root "reload"
+    echo "Reloading nginx configuration..."
+    systemctl reload "$NGINX_SERVICE"
+    echo -e "${GREEN}nginx configuration reloaded${NC}"
+}
+
+function cmd_test() {
+    if [ ! -f /etc/moonraker-auth/nginx-auth.conf ]; then
+        echo -e "${RED}nginx configuration not found${NC}"
+        exit 1
+    fi
+    echo "Testing nginx configuration..."
+    nginx -t -c /etc/moonraker-auth/nginx-auth.conf
+    echo -e "${GREEN}Configuration syntax is OK${NC}"
+}
+
+function cmd_bootstrap() {
+    check_root "bootstrap"
+
+    # Generate a random 32-character hex key
+    local new_key=$(openssl rand -hex 16)
+    local bootstrap_name="bootstrap_${new_key}"
+
+    echo "Creating bootstrap admin key..."
+
+    # Insert directly into database
+    sqlite3 /var/lib/nginx-auth/keys.db <<EOF
+INSERT INTO api_keys (key, role, name, created_at, created_by)
+VALUES ('$bootstrap_name', 'admin', 'Bootstrap Admin Key', $(date +%s)000, 'system');
+EOF
+
+    echo -e "${GREEN}Bootstrap admin key created successfully!${NC}"
+    echo ""
+    echo "============================================"
+    echo "API Key: $bootstrap_name"
+    echo "Role: admin"
+    echo "============================================"
+    echo ""
+    echo "Save this key securely! You can use it to:"
+    echo "  - Create additional API keys"
+    echo "  - Register auth and token cards"
+    echo "  - Manage the authentication system"
+    echo ""
+    echo "Example usage:"
+    echo "  curl -H \"X-Api-Key: $bootstrap_name\" http://localhost:7125/printer/info"
+}
+
+# Main command dispatcher
+case "${1:-}" in
+    start)
+        cmd_start
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    restart)
+        cmd_restart
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs)
+        cmd_logs "${2:-}"
+        ;;
+    config)
+        cmd_config
+        ;;
+    reload)
+        cmd_reload
+        ;;
+    test)
+        cmd_test
+        ;;
+    bootstrap)
+        cmd_bootstrap
+        ;;
+    help|--help|-h)
+        print_usage
+        ;;
+    "")
+        echo -e "${RED}Error: No command specified${NC}"
+        echo ""
+        print_usage
+        exit 1
+        ;;
+    *)
+        echo -e "${RED}Error: Unknown command: $1${NC}"
+        echo ""
+        print_usage
+        exit 1
+        ;;
+esac
