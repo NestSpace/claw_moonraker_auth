@@ -76,7 +76,7 @@ After configuring Moonraker, proceed with installation.
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/moonraker-auth.git
+git clone https://github.com/NestSpace/claw_moonraker_auth.git
 cd moonraker-auth
 sudo bash install.sh
 ```
