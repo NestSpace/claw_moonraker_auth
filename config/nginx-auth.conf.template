@@ -83,6 +83,7 @@ http {
             rewrite ^/internal_token_execute/(.*) /$1 break;
             proxy_pass http://{{MOONRAKER_HOST}}:{{MOONRAKER_PORT}};
             proxy_set_header X-Api-Key $moonraker_service_key;
+            proxy_set_header Content-Type application/json;
             proxy_http_version 1.1;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
